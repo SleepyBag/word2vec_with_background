@@ -374,6 +374,7 @@ void InitNet() {
 void *TrainModelThread(void *id) {
   long long a, b, d, cw, word, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
+  long long* off_sen = sen + 1:
   long long l1, l2, c, target, label, local_iter = iter;
   unsigned long long next_random = (long long)id;
   char eof = 0;
@@ -414,6 +415,7 @@ void *TrainModelThread(void *id) {
         sentence_length++;
         if (sentence_length >= MAX_SENTENCE_LENGTH) break;
       }
+      --sentence_length;
       sentence_position = 0;
     }
     if (eof || (word_count > train_words / num_threads)) {
@@ -426,7 +428,7 @@ void *TrainModelThread(void *id) {
       fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
       continue;
     }
-    word = sen[sentence_position];
+    word = off_sen[sentence_position];
     if (word == -1) continue;
     for (c = 0; c < layer1_size; c++) neu1[c] = 0;
     for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
@@ -439,12 +441,15 @@ void *TrainModelThread(void *id) {
         c = sentence_position - window + a;
         if (c < 0) continue;
         if (c >= sentence_length) continue;
-        last_word = sen[c];
+        last_word = off_sen[c];
         if (last_word == -1) continue;
         for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + last_word * layer1_size];
         cw++;
       }
       if (cw) {
+        long long user = sen[0];
+        for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + user * layer1_size];
+        ++cw;
         for (c = 0; c < layer1_size; c++) neu1[c] /= cw;
         if (hs) for (d = 0; d < vocab[word].codelen; d++) {
           f = 0;
@@ -487,17 +492,19 @@ void *TrainModelThread(void *id) {
           c = sentence_position - window + a;
           if (c < 0) continue;
           if (c >= sentence_length) continue;
-          last_word = sen[c];
+          last_word = off_sen[c];
           if (last_word == -1) continue;
           for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
+        user = sen[0];
+        for (c = 0; c < layer1_size; c++) syn0[c + user * layer1_size] += neu1e[c];
       }
     } else {  //train skip-gram
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
         c = sentence_position - window + a;
         if (c < 0) continue;
         if (c >= sentence_length) continue;
-        last_word = sen[c];
+        last_word = off_sen[c];
         if (last_word == -1) continue;
         l1 = last_word * layer1_size;
         for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
