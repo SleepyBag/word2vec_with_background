@@ -371,10 +371,12 @@ void InitNet() {
   CreateBinaryTree();
 }
 
+int user = 0;
+
 void *TrainModelThread(void *id) {
   long long a, b, d, cw, word, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
-  long long* off_sen = sen + 1;
+  long long* off_sen = user ? sen + 1 : sen;
   long long l1, l2, c, target, label, local_iter = iter;
   unsigned long long next_random = (long long)id;
   char eof = 0;
@@ -447,9 +449,11 @@ void *TrainModelThread(void *id) {
         cw++;
       }
       if (cw) {
-        long long user = sen[0];
-        for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + user * layer1_size];
-        ++cw;
+        if (user) {
+          long long user = sen[0];
+          for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + user * layer1_size];
+          ++cw;
+        }
         for (c = 0; c < layer1_size; c++) neu1[c] /= cw;
         if (hs) for (d = 0; d < vocab[word].codelen; d++) {
           f = 0;
@@ -496,8 +500,10 @@ void *TrainModelThread(void *id) {
           if (last_word == -1) continue;
           for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
-        user = sen[0];
-        for (c = 0; c < layer1_size; c++) syn0[c + user * layer1_size] += neu1e[c];
+        if (user) {
+          user = sen[0];
+          for (c = 0; c < layer1_size; c++) syn0[c + user * layer1_size] += neu1e[c];
+        }
       }
     } else {  //train skip-gram
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -573,6 +579,10 @@ void TrainModel() {
   InitNet();
   if (negative > 0) InitUnigramTable();
   start = clock();
+  user = 1;
+  for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
+  for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
+  user = 0;
   for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
   for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
   fo = fopen(output_file, "wb");
